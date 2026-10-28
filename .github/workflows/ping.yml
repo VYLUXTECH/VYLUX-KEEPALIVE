@@ -9,10 +9,25 @@ jobs:
   ping:
     runs-on: ubuntu-latest
     steps:
-      - name: Ping.panel (prevents Render free-tier spin-down)
+      - name: Ping target A (prevents Render free-tier spin-down)
+        env:
+          A: ${{ secrets.PING_URL }}
         run: |
-          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 https://jayo.vyluxtech.com/)
-          echo "jayo -> HTTP $code"
-          if [ "$code" != "200" ]; then sleep 45; curl -s -o /dev/null -w 'retry: %{http_code}\n' --max-time 30 https://jayo.vyluxtech.com/; fi
-      - name: Ping frontend
-        run: curl -s -o /dev/null -w 'top -> HTTP %{http_code}\n' --max-time 30 https://top.vyluxtech.com/
+          code=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$A")
+          echo "target A -> HTTP $code"
+          if [ "$code" != "200" ]; then sleep 45; curl -s -o /dev/null -w 'retry: %{http_code}\n' --max-time 30 "$A"; fi
+      - name: Ping target B
+        env:
+          B: ${{ secrets.PING_URL2 }}
+        run: curl -s -o /dev/null -w 'target B -> HTTP %{http_code}\n' --max-time 30 "$B"
+      - name: Verify both targets healthy
+        env:
+          A: ${{ secrets.PING_URL }}
+          B: ${{ secrets.PING_URL2 }}
+        run: |
+          for u in "$A" "$B"; do
+            c=$(curl -s -o /dev/null -w '%{http_code}' --max-time 30 "$u")
+            echo "$u -> $c"
+            [ "$c" = "200" ] || exit 1
+          done
+          echo "ALL APPS ONLINE"
