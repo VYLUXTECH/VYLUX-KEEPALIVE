@@ -1,0 +1,40 @@
+name: panelbot-renew
+on:
+  schedule:
+    - cron: '0 */8 * * *'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  renew:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Session + expiry watchdog, renewal attempt (all endpoints from secrets)
+        env:
+          BASE: ${{ secrets.PANELBOT_BASE_URL }}       # https://panelbot.id
+          SERVER: ${{ secrets.PANELBOT_SERVER_PATH }}  # /server
+          RENEW: ${{ secrets.PANELBOT_RENEW_PATH }}    # /renew/<server-id>
+          COOKIES: ${{ secrets.PANELBOT_COOKIES }}     # cookie header blob
+        run: |
+          if [ -z "$COOKIES" ]; then echo "secrets not configured -> nothing to do"; exit 0; fi
+          jar=$(mktemp)
+          curl -s -c "$jar" -m 30 "$BASE$SERVER" -o sv.html || { echo "network fail"; exit 1; }
+          if ! grep -q "Logout" sv.html; then
+            echo "panel session dead -> refresh the PANELBOT_COOKIES secret"; exit 1
+          fi
+          echo "expiry seen: $(grep -Eo '[0-9]{1,2} [A-Za-z]+ 2[0-9]{3}' sv.html | tail -1)"
+          csrf=$(curl -s -b "$jar" -m 30 "$BASE$RENEW" | grep -oP 'name="_csrf" value="\K[^"]+' | head -1)
+          if [ -z "$csrf" ]; then echo "renew form not served"; exit 1; fi
+          code=$(curl -s -o out.html -w '%{http_code}' -b "$jar" -X POST "$BASE$RENEW" \
+            -H 'Content-Type: application/x-www-form-urlencoded' \
+            --data-urlencode "_csrf=$csrf" \
+            --data-urlencode "duration=3" \
+            --data-urlencode "price=Rp 0")
+          echo "renew POST -> HTTP $code"
+          if grep -qi "tidak dapat diperpanjang" out.html; then
+            echo "free category cannot renew - recreate handled by box-local watcher"
+          elif [ "$code" = "200" ]; then
+            echo "renewal request accepted"
+          else
+            echo "renewal POST rejected (HTTP $code)"
+          fi
