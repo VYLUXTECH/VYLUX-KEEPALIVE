@@ -18,12 +18,12 @@ jobs:
         run: |
           if [ -z "$COOKIES" ]; then echo "secrets not configured -> nothing to do"; exit 0; fi
           jar=$(mktemp)
-          curl -s -c "$jar" -m 30 "$BASE$SERVER" -o sv.html || { echo "network fail"; exit 1; }
+          curl -s -c "$jar" -b "$COOKIES" -m 30 "$BASE$SERVER" -o sv.html || { echo "network fail"; exit 1; }
           if ! grep -q "Logout" sv.html; then
             echo "panel session dead -> refresh the PANELBOT_COOKIES secret"; exit 1
           fi
           echo "expiry seen: $(grep -Eo '[0-9]{1,2} [A-Za-z]+ 2[0-9]{3}' sv.html | tail -1)"
-          csrf=$(curl -s -b "$jar" -m 30 "$BASE$RENEW" | grep -oP 'name="_csrf" value="\K[^"]+' | head -1)
+          csrf=$(curl -s -c "$jar" -b "$COOKIES" -m 30 "$BASE$RENEW" | grep -oP 'name="_csrf" value="\K[^"]+' | head -1)
           if [ -z "$csrf" ]; then echo "renew form not served"; exit 1; fi
           code=$(curl -s -o out.html -w '%{http_code}' -b "$jar" -X POST "$BASE$RENEW" \
             -H 'Content-Type: application/x-www-form-urlencoded' \
